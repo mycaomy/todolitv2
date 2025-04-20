@@ -55,10 +55,33 @@
     const canvasPM = document.getElementById('clockPM');
     const ctxPM = canvasPM.getContext('2d');
     let activities = [];
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/library/d/1bz2KrhM3yKiP7Le2iUf8QbCH-fhQxAWAJlRNhqVeEP7BuoMDJ9BeYNag/1'; // Replace with your Web app URL
+
     try {
       activities = JSON.parse(localStorage.getItem('activities') || '[]');
     } catch (e) {
       console.error('Error reading localStorage:', e);
+    }
+
+    function syncWithGoogleSheets() {
+      fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync', activities })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'success') {
+          console.log('Successfully synced with Google Sheets');
+        } else {
+          console.error('Sync failed:', data.message);
+          alert('Đã xảy ra lỗi khi đồng bộ với Google Sheets: ' + data.message);
+        }
+      })
+      .catch(error => {
+        console.error('Error syncing with Google Sheets:', error);
+        alert('Đã xảy ra lỗi khi đồng bộ với Google Sheets.');
+      });
     }
 
     function toMinutes(timeStr) {
@@ -72,7 +95,6 @@
       const startH = Math.floor(s / 60);
       const endH = Math.floor(e / 60);
 
-      // Xác định các đoạn thời gian trong phạm vi đồng hồ
       let segments = [];
       if (startH <= endHour && endH >= startHour) {
         const adjustedStartMin = Math.max(s, startHour * 60);
@@ -80,7 +102,6 @@
         segments.push({ startMin: adjustedStartMin, endMin: adjustedEndMin });
       }
 
-      // Vẽ cung cho từng đoạn
       segments.forEach(segment => {
         const startAngle = (((Math.floor(segment.startMin / 60) % 12) + (segment.startMin % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2;
         const endAngle = (((Math.floor(segment.endMin / 60) % 12) + (segment.endMin % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2;
@@ -99,14 +120,12 @@
       const center = 150;
       const radius = 130;
 
-      // Vẽ viền đồng hồ
       ctx.beginPath();
       ctx.arc(center, center, radius, 0, 2 * Math.PI);
       ctx.strokeStyle = "#000";
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Vẽ nhãn giờ
       ctx.font = "12px Arial";
       ctx.fillStyle = "black";
       const hourCount = endHour - startHour + 1;
@@ -119,10 +138,8 @@
         ctx.fillText(displayHour, x - 5, y + 5);
       }
 
-      // Vẽ cung hoạt động
       activities.forEach(act => drawActivityArc(ctx, center, radius, act, startHour, endHour));
 
-      // Vẽ lại nhãn giờ để không bị che
       ctx.fillStyle = "black";
       for (let i = 0; i < hourCount; i++) {
         const hour = (startHour + i) % 24;
@@ -185,8 +202,8 @@
         localStorage.setItem('activities', JSON.stringify(activities));
         updateTable();
         drawClocks();
+        syncWithGoogleSheets();
 
-        // Reset form
         document.getElementById('name').value = '';
         document.getElementById('start').value = '';
         document.getElementById('end').value = '';
@@ -213,7 +230,6 @@
         table.appendChild(row);
       });
 
-      // Thêm sự kiện kéo thả
       const rows = table.querySelectorAll('tr');
       rows.forEach(row => {
         row.addEventListener('dragstart', (e) => {
@@ -237,6 +253,7 @@
               localStorage.setItem('activities', JSON.stringify(activities));
               updateTable();
               drawClocks();
+              syncWithGoogleSheets();
             } catch (e) {
               console.error('Error saving reordered activities:', e);
               alert('Đã xảy ra lỗi khi lưu thứ tự mới. Vui lòng thử lại.');
@@ -252,6 +269,7 @@
         localStorage.setItem('activities', JSON.stringify(activities));
         updateTable();
         drawClocks();
+        syncWithGoogleSheets();
       } catch (e) {
         console.error('Error deleting activity:', e);
         alert('Đã xảy ra lỗi khi xóa hoạt động. Vui lòng thử lại.');
@@ -265,6 +283,8 @@
 
     updateClocksWithTime();
     updateTable();
+    // Initial sync on page load
+    syncWithGoogleSheets();
   </script>
 </body>
 </html>
