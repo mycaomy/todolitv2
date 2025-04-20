@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
@@ -48,113 +48,121 @@
   </table>
 
   <script>
-    const canvasAM = document.getElementById('clockAM');
-    const ctxAM = canvasAM.getContext('2d');
-    const canvasPM = document.getElementById('clockPM');
-    const ctxPM = canvasPM.getContext('2d');
-    const API_URL = 'https://script.google.com/macros/s/AKfycbz37-eCxqtozCZzKyrkThevDN5cm0Vgdx5_Hc1ZoQleJ3zjnnyZd_oi_MhoLECcsUVA/exec';
-    let activities = [];
+    const canvasAM = document.getElementById('clockAM')
+    const ctxAM = canvasAM.getContext('2d')
+    const canvasPM = document.getElementById('clockPM')
+    const ctxPM = canvasPM.getContext('2d')
+    let activities = JSON.parse(localStorage.getItem('activities') || '[]')
 
-    async function fetchActivities() {
-      const res = await fetch(API_URL);
-      const data = await res.json();
-      activities = data;
-      updateTable();
-      drawClocks();
+    function toMinutes(timeStr) {
+      const [h, m] = timeStr.split(":").map(Number)
+      return h * 60 + m
     }
 
-    async function addActivity() {
-      const name = document.getElementById('name').value;
-      const start = document.getElementById('start').value;
-      const end = document.getElementById('end').value;
-      const color = document.getElementById('color').value;
-      if (!name || !start || !end) return alert('Vui lòng điền đầy đủ thông tin');
+    function drawSingleClock(ctx, startHour, endHour, use12hPositioning = false) {
+      ctx.clearRect(0, 0, 300, 300)
+      const center = 150
+      const radius = 130
 
-      await fetch(API_URL + `?action=add&name=${encodeURIComponent(name)}&start=${start}&end=${end}&color=${color}`, { method: 'POST' });
-      fetchActivities();
+      ctx.beginPath()
+      ctx.arc(center, center, radius, 0, 2 * Math.PI)
+      ctx.strokeStyle = "#000"
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      ctx.font = "12px Arial"
+      ctx.fillStyle = "black"
+
+      const hourCount = endHour - startHour + 1
+      for (let i = 0; i < hourCount; i++) {
+        const hour = startHour + i
+        const angle = use12hPositioning
+          ? ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2
+          : (i / hourCount) * 2 * Math.PI - Math.PI / 2
+        const x = center + Math.cos(angle) * (radius - 10)
+        const y = center + Math.sin(angle) * (radius - 10)
+        ctx.fillText(hour, x - 5, y + 5)
+      }
+
+      activities.forEach(act => {
+        const s = toMinutes(act.start)
+        const e = toMinutes(act.end)
+        const startH = Math.floor(s / 60), endH = Math.floor(e / 60)
+
+        if (startH >= startHour && startH <= endHour) {
+          const startAngle = use12hPositioning
+            ? (((startH % 12) + (s % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
+            : ((startH + (s % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
+          const endAngle = use12hPositioning
+            ? (((Math.min(endH, endHour) % 12) + (e % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
+            : ((Math.min(endH, endHour) + (e % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
+
+          ctx.beginPath()
+          ctx.moveTo(center, center)
+          ctx.fillStyle = act.color
+          ctx.arc(center, center, radius, startAngle, endAngle)
+          ctx.closePath()
+          ctx.fill()
+        }
+      })
+
+      ctx.fillStyle = "black"
+      for (let i = 0; i < hourCount; i++) {
+        const hour = startHour + i
+        const angle = use12hPositioning
+          ? ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2
+          : (i / hourCount) * 2 * Math.PI - Math.PI / 2
+        const x = center + Math.cos(angle) * (radius - 10)
+        const y = center + Math.sin(angle) * (radius - 10)
+        ctx.fillText(hour, x - 5, y + 5)
+      }
     }
 
-    async function deleteActivity(index) {
-      const act = activities[index];
-      await fetch(API_URL + `?action=delete&name=${encodeURIComponent(act.name)}&start=${act.start}`, { method: 'POST' });
-      fetchActivities();
+    function drawClocks() {
+      drawSingleClock(ctxAM, 0, 11, true)
+      drawSingleClock(ctxPM, 13, 23, true)
+    }
+
+    function addActivity() {
+      const name = document.getElementById('name').value
+      const start = document.getElementById('start').value
+      const end = document.getElementById('end').value
+      const color = document.getElementById('color').value
+      if (!name || !start || !end) return alert('Vui lòng điền đầy đủ thông tin')
+
+      activities.push({ name, start, end, color })
+      localStorage.setItem('activities', JSON.stringify(activities))
+      updateTable()
+      drawClocks()
     }
 
     function updateTable() {
-      const table = document.getElementById('activityTable');
-      table.innerHTML = '';
+      const table = document.getElementById('activityTable')
+      table.innerHTML = ''
       activities.forEach((act, i) => {
-        const row = document.createElement('tr');
+        const row = document.createElement('tr')
         row.innerHTML = `
           <td><div class="color-box" style="background:${act.color}"></div></td>
           <td>${act.name}</td>
           <td>${act.start}</td>
           <td>${act.end}</td>
           <td><button onclick="deleteActivity(${i})">Xóa</button></td>
-        `;
-        table.appendChild(row);
-      });
+        `
+        table.appendChild(row)
+      })
     }
 
-    function toMinutes(timeStr) {
-      const [h, m] = timeStr.split(":").map(Number);
-      return h * 60 + m;
+    function deleteActivity(index) {
+      activities.splice(index, 1)
+      localStorage.setItem('activities', JSON.stringify(activities))
+      updateTable()
+      drawClocks()
     }
 
-    function drawSingleClock(ctx, startHour, endHour, use12hPositioning = false) {
-      ctx.clearRect(0, 0, 300, 300);
-      const center = 150;
-      const radius = 130;
-
-      ctx.beginPath();
-      ctx.arc(center, center, radius, 0, 2 * Math.PI);
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.font = "12px Arial";
-      ctx.fillStyle = "black";
-
-      const hourCount = endHour - startHour + 1;
-      for (let i = 0; i < hourCount; i++) {
-        const hour = startHour + i;
-        const angle = use12hPositioning
-          ? ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2
-          : (i / hourCount) * 2 * Math.PI - Math.PI / 2;
-        const x = center + Math.cos(angle) * (radius - 10);
-        const y = center + Math.sin(angle) * (radius - 10);
-        ctx.fillText(hour, x - 5, y + 5);
-      }
-
-      activities.forEach(act => {
-        const s = toMinutes(act.start);
-        const e = toMinutes(act.end);
-        const startH = Math.floor(s / 60), endH = Math.floor(e / 60);
-
-        if (startH >= startHour && startH <= endHour) {
-          const startAngle = use12hPositioning
-            ? (((startH % 12) + (s % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((startH + (s % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2;
-          const endAngle = use12hPositioning
-            ? (((Math.min(endH, endHour) % 12) + (e % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((Math.min(endH, endHour) + (e % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2;
-
-          ctx.beginPath();
-          ctx.moveTo(center, center);
-          ctx.fillStyle = act.color;
-          ctx.arc(center, center, radius, startAngle, endAngle);
-          ctx.closePath();
-          ctx.fill();
-        }
-      });
-    }
-
-    function drawClocks() {
-      drawSingleClock(ctxAM, 0, 11, true);
-      drawSingleClock(ctxPM, 13, 23, true);
-    }
-
-    fetchActivities();
+    drawClocks()
+    updateTable()
   </script>
+
+<script src="https://static.app/js/static.js" type="text/javascript"></script>
 </body>
 </html>
