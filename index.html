@@ -19,6 +19,8 @@
     table { margin: 20px auto; border-collapse: collapse; width: 90%; max-width: 600px; }
     th, td { border: 1px solid #ccc; padding: 8px; font-size: 0.9em; }
     .color-box { display: inline-block; width: 16px; height: 16px; margin-right: 5px; }
+    tr[draggable="true"] { cursor: move; }
+    tr.dragging { opacity: 0.5; background: #f0f0f0; }
   </style>
 </head>
 <body>
@@ -32,11 +34,11 @@
   </div>
   <div class="canvas-container">
     <div>
-      <h3>Đồng hồ Sáng (00:00 - 12:00)</h3>
+      <h3>Đồng hồ Sáng (00:00 - 11:59)</h3>
       <canvas id="clockAM" width="300" height="300"></canvas>
     </div>
     <div>
-      <h3>Đồng hồ Chiều/Tối (13:00 - 23:59)</h3>
+      <h3>Đồng hồ Chiều/Tối (12:00 - 23:59)</h3>
       <canvas id="clockPM" width="300" height="300"></canvas>
     </div>
   </div>
@@ -48,123 +50,221 @@
   </table>
 
   <script>
-    const canvasAM = document.getElementById('clockAM')
-    const ctxAM = canvasAM.getContext('2d')
-    const canvasPM = document.getElementById('clockPM')
-    const ctxPM = canvasPM.getContext('2d')
-    let activities = JSON.parse(localStorage.getItem('activities') || '[]')
+    const canvasAM = document.getElementById('clockAM');
+    const ctxAM = canvasAM.getContext('2d');
+    const canvasPM = document.getElementById('clockPM');
+    const ctxPM = canvasPM.getContext('2d');
+    let activities = [];
+    try {
+      activities = JSON.parse(localStorage.getItem('activities') || '[]');
+    } catch (e) {
+      console.error('Error reading localStorage:', e);
+    }
 
     function toMinutes(timeStr) {
-      const [h, m] = timeStr.split(":").map(Number)
-      return h * 60 + m
+      const [h, m] = timeStr.split(":").map(Number);
+      return h * 60 + m;
     }
 
-    function drawSingleClock(ctx, startHour, endHour, use12hPositioning = false) {
-      ctx.clearRect(0, 0, 300, 300)
-      const center = 150
-      const radius = 130
+    function drawActivityArc(ctx, center, radius, act, startHour, endHour) {
+      const s = toMinutes(act.start);
+      const e = toMinutes(act.end);
+      const startH = Math.floor(s / 60);
+      const endH = Math.floor(e / 60);
 
-      ctx.beginPath()
-      ctx.arc(center, center, radius, 0, 2 * Math.PI)
-      ctx.strokeStyle = "#000"
-      ctx.lineWidth = 1
-      ctx.stroke()
-
-      ctx.font = "12px Arial"
-      ctx.fillStyle = "black"
-
-      const hourCount = endHour - startHour + 1
-      for (let i = 0; i < hourCount; i++) {
-        const hour = startHour + i
-        const angle = use12hPositioning
-          ? ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2
-          : (i / hourCount) * 2 * Math.PI - Math.PI / 2
-        const x = center + Math.cos(angle) * (radius - 10)
-        const y = center + Math.sin(angle) * (radius - 10)
-        ctx.fillText(hour, x - 5, y + 5)
+      // Xác định các đoạn thời gian trong phạm vi đồng hồ
+      let segments = [];
+      if (startH <= endHour && endH >= startHour) {
+        const adjustedStartMin = Math.max(s, startHour * 60);
+        const adjustedEndMin = Math.min(e, (endHour + 1) * 60);
+        segments.push({ startMin: adjustedStartMin, endMin: adjustedEndMin });
       }
 
-      activities.forEach(act => {
-        const s = toMinutes(act.start)
-        const e = toMinutes(act.end)
-        const startH = Math.floor(s / 60)
-        const endH = Math.floor(e / 60)
+      // Vẽ cung cho từng đoạn
+      segments.forEach(segment => {
+        const startAngle = (((Math.floor(segment.startMin / 60) % 12) + (segment.startMin % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2;
+        const endAngle = (((Math.floor(segment.endMin / 60) % 12) + (segment.endMin % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2;
 
-        const isInRange = (startH <= endHour && endH >= startHour)
-        if (isInRange) {
-          const adjustedStartH = Math.max(startH, startHour)
-          const adjustedEndH = Math.min(endH, endHour)
-          const startAngle = use12hPositioning
-            ? (((adjustedStartH % 12) + ((s % 60) / 60)) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((adjustedStartH + (s % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
-          const endAngle = use12hPositioning
-            ? (((adjustedEndH % 12) + ((e % 60) / 60)) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((adjustedEndH + (e % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
+        ctx.beginPath();
+        ctx.moveTo(center, center);
+        ctx.fillStyle = act.color;
+        ctx.arc(center, center, radius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fill();
+      });
+    }
 
-          ctx.beginPath()
-          ctx.moveTo(center, center)
-          ctx.fillStyle = act.color
-          ctx.arc(center, center, radius, startAngle, endAngle)
-          ctx.closePath()
-          ctx.fill()
-        }
-      })
+    function drawSingleClock(ctx, startHour, endHour) {
+      ctx.clearRect(0, 0, 300, 300);
+      const center = 150;
+      const radius = 130;
 
-      ctx.fillStyle = "black"
+      // Vẽ viền đồng hồ
+      ctx.beginPath();
+      ctx.arc(center, center, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Vẽ nhãn giờ
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "black";
+      const hourCount = endHour - startHour + 1;
       for (let i = 0; i < hourCount; i++) {
-        const hour = startHour + i
-        const angle = use12hPositioning
-          ? ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2
-          : (i / hourCount) * 2 * Math.PI - Math.PI / 2
-        const x = center + Math.cos(angle) * (radius - 10)
-        const y = center + Math.sin(angle) * (radius - 10)
-        ctx.fillText(hour, x - 5, y + 5)
+        const hour = (startHour + i) % 24;
+        const displayHour = hour === 0 ? '0' : hour;
+        const angle = ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2;
+        const x = center + Math.cos(angle) * (radius - 10);
+        const y = center + Math.sin(angle) * (radius - 10);
+        ctx.fillText(displayHour, x - 5, y + 5);
+      }
+
+      // Vẽ cung hoạt động
+      activities.forEach(act => drawActivityArc(ctx, center, radius, act, startHour, endHour));
+
+      // Vẽ lại nhãn giờ để không bị che
+      ctx.fillStyle = "black";
+      for (let i = 0; i < hourCount; i++) {
+        const hour = (startHour + i) % 24;
+        const displayHour = hour === 0 ? '0' : hour;
+        const angle = ((hour % 12) / 12) * 2 * Math.PI - Math.PI / 2;
+        const x = center + Math.cos(angle) * (radius - 10);
+        const y = center + Math.sin(angle) * (radius - 10);
+        ctx.fillText(displayHour, x - 5, y + 5);
       }
     }
 
-    function drawClocks() {
-      drawSingleClock(ctxAM, 0, 11, true)
-      drawSingleClock(ctxPM, 13, 23, true)
+    function drawClockHands(ctx, hour, minute) {
+      const center = 150, radius = 130;
+      const hourAngle = ((hour % 12 + minute / 60) / 12) * 2 * Math.PI - Math.PI / 2;
+      const minuteAngle = (minute / 60) * 2 * Math.PI - Math.PI / 2;
+
+      ctx.beginPath();
+      ctx.moveTo(center, center);
+      ctx.lineTo(center + Math.cos(hourAngle) * (radius * 0.5), center + Math.sin(hourAngle) * (radius * 0.5));
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(center, center);
+      ctx.lineTo(center + Math.cos(minuteAngle) * (radius * 0.8), center + Math.sin(minuteAngle) * (radius * 0.8));
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    function updateClocksWithTime() {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+
+      drawSingleClock(ctxAM, 0, 11);
+      drawSingleClock(ctxPM, 12, 23);
+      if (hours < 12) {
+        drawClockHands(ctxAM, hours, minutes);
+      } else {
+        drawClockHands(ctxPM, hours, minutes);
+      }
+      requestAnimationFrame(updateClocksWithTime);
     }
 
     function addActivity() {
-      const name = document.getElementById('name').value
-      const start = document.getElementById('start').value
-      const end = document.getElementById('end').value
-      const color = document.getElementById('color').value
-      if (!name || !start || !end) return alert('Vui lòng điền đầy đủ thông tin')
+      const name = document.getElementById('name').value.trim();
+      const start = document.getElementById('start').value;
+      const end = document.getElementById('end').value;
+      const color = document.getElementById('color').value;
 
-      activities.push({ name, start, end, color })
-      localStorage.setItem('activities', JSON.stringify(activities))
-      updateTable()
-      drawClocks()
+      if (!name || !start || !end) {
+        alert('Vui lòng điền đầy đủ thông tin: tên, thời gian bắt đầu, và thời gian kết thúc.');
+        return;
+      }
+
+      try {
+        activities.push({ name, start, end, color });
+        localStorage.setItem('activities', JSON.stringify(activities));
+        updateTable();
+        drawClocks();
+
+        // Reset form
+        document.getElementById('name').value = '';
+        document.getElementById('start').value = '';
+        document.getElementById('end').value = '';
+      } catch (e) {
+        console.error('Error saving activity:', e);
+        alert('Đã xảy ra lỗi khi lưu hoạt động. Vui lòng thử lại.');
+      }
     }
 
     function updateTable() {
-      const table = document.getElementById('activityTable')
-      table.innerHTML = ''
+      const table = document.getElementById('activityTable');
+      table.innerHTML = '';
       activities.forEach((act, i) => {
-        const row = document.createElement('tr')
+        const row = document.createElement('tr');
+        row.setAttribute('draggable', 'true');
+        row.setAttribute('data-index', i);
         row.innerHTML = `
           <td><div class="color-box" style="background:${act.color}"></div></td>
           <td>${act.name}</td>
           <td>${act.start}</td>
           <td>${act.end}</td>
           <td><button onclick="deleteActivity(${i})">Xóa</button></td>
-        `
-        table.appendChild(row)
-      })
+        `;
+        table.appendChild(row);
+      });
+
+      // Thêm sự kiện kéo thả
+      const rows = table.querySelectorAll('tr');
+      rows.forEach(row => {
+        row.addEventListener('dragstart', (e) => {
+          row.classList.add('dragging');
+          e.dataTransfer.setData('text/plain', row.dataset.index);
+        });
+        row.addEventListener('dragend', () => {
+          row.classList.remove('dragging');
+        });
+        row.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+          const targetIndex = parseInt(row.dataset.index);
+          if (draggedIndex !== targetIndex) {
+            const [draggedActivity] = activities.splice(draggedIndex, 1);
+            activities.splice(targetIndex, 0, draggedActivity);
+            try {
+              localStorage.setItem('activities', JSON.stringify(activities));
+              updateTable();
+              drawClocks();
+            } catch (e) {
+              console.error('Error saving reordered activities:', e);
+              alert('Đã xảy ra lỗi khi lưu thứ tự mới. Vui lòng thử lại.');
+            }
+          }
+        });
+      });
     }
 
     function deleteActivity(index) {
-      activities.splice(index, 1)
-      localStorage.setItem('activities', JSON.stringify(activities))
-      updateTable()
-      drawClocks()
+      activities.splice(index, 1);
+      try {
+        localStorage.setItem('activities', JSON.stringify(activities));
+        updateTable();
+        drawClocks();
+      } catch (e) {
+        console.error('Error deleting activity:', e);
+        alert('Đã xảy ra lỗi khi xóa hoạt động. Vui lòng thử lại.');
+      }
     }
 
-    drawClocks()
-    updateTable()
+    function drawClocks() {
+      drawSingleClock(ctxAM, 0, 11);
+      drawSingleClock(ctxPM, 12, 23);
+    }
+
+    updateClocksWithTime();
+    updateTable();
   </script>
 </body>
 </html>
