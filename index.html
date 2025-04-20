@@ -87,15 +87,19 @@
       activities.forEach(act => {
         const s = toMinutes(act.start)
         const e = toMinutes(act.end)
-        const startH = Math.floor(s / 60), endH = Math.floor(e / 60)
+        const startH = Math.floor(s / 60)
+        const endH = Math.floor(e / 60)
 
-        if (startH >= startHour && startH <= endHour) {
+        const isInRange = (startH <= endHour && endH >= startHour)
+        if (isInRange) {
+          const adjustedStartH = Math.max(startH, startHour)
+          const adjustedEndH = Math.min(endH, endHour)
           const startAngle = use12hPositioning
-            ? (((startH % 12) + (s % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((startH + (s % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
+            ? (((adjustedStartH % 12) + ((s % 60) / 60)) / 12) * 2 * Math.PI - Math.PI / 2
+            : ((adjustedStartH + (s % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
           const endAngle = use12hPositioning
-            ? (((Math.min(endH, endHour) % 12) + (e % 60) / 60) / 12) * 2 * Math.PI - Math.PI / 2
-            : ((Math.min(endH, endHour) + (e % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
+            ? (((adjustedEndH % 12) + ((e % 60) / 60)) / 12) * 2 * Math.PI - Math.PI / 2
+            : ((adjustedEndH + (e % 60) / 60 - startHour) / hourCount) * 2 * Math.PI - Math.PI / 2
 
           ctx.beginPath()
           ctx.moveTo(center, center)
